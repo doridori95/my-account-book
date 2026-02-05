@@ -72,7 +72,19 @@ if all_data:
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.dataframe(filtered_df, use_container_width=True)
+        if not filtered_df.empty:
+            display_df = filtered_df.copy()
+            
+            # 1. 날짜 컬럼을 문자열로 변환 (Arrow 에러 방지)
+            if "날짜" in display_df.columns:
+                display_df["날짜"] = display_df["날짜"].dt.strftime('%Y-%m-%d')
+            
+            # 2. 금액 컬럼을 확실하게 숫자로 변환
+            if "금액" in display_df.columns:
+                display_df["금액"] = pd.to_numeric(display_df["금액"], errors='coerce').fillna(0)
+
+            # 3. 화면에 출력
+            st.dataframe(display_df, use_container_width=True)
         
     with col2:
         # 6) 분류별 합계 요약
