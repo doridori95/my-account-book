@@ -6,14 +6,14 @@ from datetime import datetime
 # --- 페이지 설정 및 디자인 ---
 st.set_page_config(page_title="스마트 구글시트 가계부", layout="wide", page_icon="💰")
 
-# 스타일 커스텀 (눈금선 제거 및 깔끔한 UI)
+# 스타일 커스텀
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #FF4B4B; color: white; }
     .stDataFrame { border-radius: 10px; }
     </style>
-    """, unsafe_allow_value=True)
+    """, unsafe_allow_html=True)
 
 st.title("💰 나의 스마트 가계부")
 
