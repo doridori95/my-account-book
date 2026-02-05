@@ -1,36 +1,33 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-import os
 
-# --- 설정 및 데이터 로드 ---
-FILE_NAME = "my_account_book.xlsx"
+# --- 설정 ---
+# 구글 시트 URL (본인의 시트 주소로 교체하세요)
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1B8Vn0qMx8j_O1-0qVFZznHK4BaTnRFMwIfc2YCcKZVE/edit?usp=sharing"
+
+st.set_page_config(page_title="구글시트 스마트 가계부", layout="wide")
+st.title("💰 구글시트 연동 가계부")
+
+# 구글 시트 연결 초기화
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# --- 함수: 데이터 불러오기 ---
+def load_data(month_name):
+    try:
+        # 해당 월의 워크시트를 읽어옵니다.
+        return conn.read(spreadsheet=SHEET_URL, worksheet=month_name)
+    except:
+        # 시트가 없으면 빈 데이터프레임 반환
+        return pd.DataFrame(columns=["날짜", "분류", "상품명", "금액"])
+
+# --- 입력창 섹션 ---
 CATEGORIES = ["식료품", "의류", "가전", "교통비", "저축", "기타"]
-
-def load_data():
-    if os.path.exists(FILE_NAME):
-        return pd.read_excel(FILE_NAME, sheet_name=None)
-    return {}
-
-def save_data(all_sheets):
-    with pd.ExcelWriter(FILE_NAME, engine='openpyxl') as writer:
-        for sheet_name, df in all_sheets.items():
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-# --- UI 구성 ---
-st.set_page_config(page_title="나의 스마트 가계부", layout="wide")
-st.title("💰 나의 스마트 가계부")
-
-# 1) 실시간 시간 기능
 now = datetime.now()
-st.write(f"현재 시간: {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
-# 데이터 불러오기
-all_data = load_data()
-
-# --- 3) 입력창 섹션 ---
-st.subheader("📝 새로운 지출 입력")
 with st.form("input_form", clear_on_submit=True):
+    st.subheader("📝 내역 입력")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         date = st.date_input("날짜", value=now)
@@ -43,63 +40,50 @@ with st.form("input_form", clear_on_submit=True):
     
     submit = st.form_submit_button("기록하기")
 
-# --- 4) 데이터 처리 (자동 월별 분류) ---
 if submit:
-    month_name = f"{date.year}년_{date.month}월"
-    new_data = pd.DataFrame([[date, category, item, price]], 
-                            columns=["날짜", "분류", "상품명", "금액"])
+    month_name = f"{date.month}월"
+    existing_data = load_data(month_name)
     
-    if month_name in all_data:
-        all_data[month_name] = pd.concat([all_data[month_name], new_data], ignore_index=True)
-    else:
-        all_data[month_name] = new_data
+    new_data = pd.DataFrame([{"날짜": date.strftime("%Y-%m-%d"), "분류": category, "상품명": item, "금액": price}])
+    updated_df = pd.concat([existing_data, new_data], ignore_index=True)
     
-    save_data(all_data)
-    st.success(f"{month_name} 시트에 저장되었습니다!")
+    # 구글 시트에 업데이트
+    conn.update(spreadsheet=SHEET_URL, worksheet=month_name, data=updated_df)
+    st.success(f"{month_name} 시트에 기록되었습니다!")
+    st.rerun()
 
-# --- 5) 월별 데이터 조회 및 6) 필터/통계 ---
+# --- 데이터 수정 및 삭제 섹션 ---
 st.divider()
-st.subheader("📊 월별 지출 내역")
+current_month = f"{now.month}월"
+selected_month = st.selectbox("조회 및 수정할 월 선택", [f"{i}월" for i in range(1, 13)], index=now.month-1)
 
-if all_data:
-    selected_month = st.selectbox("조회할 월 선택", list(all_data.keys())[::-1])
-    df_display = all_data[selected_month]
+df = load_data(selected_month)
+
+if not df.empty:
+    st.subheader(f"📊 {selected_month} 내역 관리")
+    st.write("💡 행 왼쪽을 선택 후 Delete 키를 누르거나, 내용을 직접 수정 후 아래 저장 버튼을 누르세요.")
     
-    # 필터 기능
-    selected_cat = st.multiselect("분류 필터", CATEGORIES, default=CATEGORIES)
-    filtered_df = df_display[df_display["분류"].isin(selected_cat)]
-    
-    col1, col2 = st.columns([2, 1])
-    
+    # [핵심] 수정 및 삭제가 가능한 데이터 에디터
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        num_rows="dynamic", # 행 추가/삭제 가능하게 설정
+        key="editor"
+    )
+
+    col1, col2 = st.columns([1, 5])
     with col1:
-        if not filtered_df.empty:
-            display_df = filtered_df.copy()
-    
-            # 1. 날짜 컬럼 처리
-            if "날짜" in display_df.columns:
-                # 먼저 날짜 형식으로 강제 변환 (문자열이나 다른 타입일 경우 대비)
-                display_df["날짜"] = pd.to_datetime(display_df["날짜"], errors='coerce')
-                
-                # 날짜 변환에 성공한 데이터만 문자열(YYYY-MM-DD)로 변환
-                # 변환 실패(NaT)인 경우는 'Invalid Date' 등으로 표시되거나 유지됨
-                display_df["날짜"] = display_df["날짜"].dt.strftime('%Y-%m-%d').fillna("데이터 오류")
-            
-            # 2. 금액 컬럼 처리 (이전과 동일)
-            if "금액" in display_df.columns:
-                display_df["금액"] = pd.to_numeric(display_df["금액"], errors='coerce').fillna(0)
+        if st.button("💾 변경사항 저장"):
+            # 수정한 데이터를 구글 시트에 다시 덮어씁니다.
+            conn.update(spreadsheet=SHEET_URL, worksheet=selected_month, data=edited_df)
+            st.success("구글 시트에 성공적으로 저장되었습니다!")
+            st.rerun()
 
-            # 3. 화면에 출력
-            st.dataframe(display_df, use_container_width=True)
-                
-    with col2:
-        # 6) 분류별 합계 요약
-        st.write(f"### {selected_month} 요약")
-        summary = filtered_df.groupby("분류")["금액"].sum()
-        st.write(summary)
-        st.info(f"**총 지출: {filtered_df['금액'].sum():,}원**")
-
-    # 7) 추가 유용한 기능: 간단한 차트
-    if not filtered_df.empty:
+    # --- 간단 통계 ---
+    if not edited_df.empty:
+        st.write("---")
+        summary = edited_df.groupby("분류")["금액"].sum()
         st.bar_chart(summary)
+        st.info(f"**{selected_month} 총 지출: {edited_df['금액'].sum():,}원**")
 else:
-    st.info("데이터가 없습니다. 첫 지출을 입력해보세요!")
+    st.info(f"{selected_month}에 등록된 데이터가 없습니다.")
