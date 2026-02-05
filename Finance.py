@@ -74,18 +74,23 @@ if all_data:
     with col1:
         if not filtered_df.empty:
             display_df = filtered_df.copy()
-            
-            # 1. 날짜 컬럼을 문자열로 변환 (Arrow 에러 방지)
+    
+            # 1. 날짜 컬럼 처리
             if "날짜" in display_df.columns:
-                display_df["날짜"] = display_df["날짜"].dt.strftime('%Y-%m-%d')
+                # 먼저 날짜 형식으로 강제 변환 (문자열이나 다른 타입일 경우 대비)
+                display_df["날짜"] = pd.to_datetime(display_df["날짜"], errors='coerce')
+                
+                # 날짜 변환에 성공한 데이터만 문자열(YYYY-MM-DD)로 변환
+                # 변환 실패(NaT)인 경우는 'Invalid Date' 등으로 표시되거나 유지됨
+                display_df["날짜"] = display_df["날짜"].dt.strftime('%Y-%m-%d').fillna("데이터 오류")
             
-            # 2. 금액 컬럼을 확실하게 숫자로 변환
+            # 2. 금액 컬럼 처리 (이전과 동일)
             if "금액" in display_df.columns:
                 display_df["금액"] = pd.to_numeric(display_df["금액"], errors='coerce').fillna(0)
 
             # 3. 화면에 출력
             st.dataframe(display_df, use_container_width=True)
-        
+                
     with col2:
         # 6) 분류별 합계 요약
         st.write(f"### {selected_month} 요약")
